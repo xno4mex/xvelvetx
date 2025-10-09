@@ -1,52 +1,151 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, TextInput } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, Alert, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useServicesWithTranslations } from '../hooks/useServicesWithTranslations';
+import { useBookings } from '../hooks';
+import { useAuth } from '../context/AuthContext';
+import { useLocale } from '../context/LocaleContext';
+import { BeautifulInput, BeautifulButton, TimeSlotPicker, BookingCard } from '../components';
+import { BookingService } from '../services/bookingService';
+import { getDateString, addDays, getWeekdayName } from '../utils';
+import { useNavigation } from '@react-navigation/native';
+import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import { MainTabParamList } from '../types/navigation';
 
-const BookingScreen = () => {
+type BookingScreenNavigationProp = BottomTabNavigationProp<MainTabParamList, 'Booking'>;
+
+const BookingScreen = ({ route }: any) => {
+  const { user } = useAuth();
+  const { getServiceById } = useServicesWithTranslations();
+  const { bookings, refresh } = useBookings(user?.id || null);
+  const navigation = useNavigation<BookingScreenNavigationProp>();
+  const { t, currentLanguage } = useLocale();
+  const [selectedService, setSelectedService] = useState<any>(null);
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedTime, setSelectedTime] = useState<string>('');
+  const [formData, setFormData] = useState({
+    comment: ''
+  });
+  const [loading, setLoading] = useState(false);
+  const [showBookings, setShowBookings] = useState(false);
 
-  const timeSlots = [
-    '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', 
-    '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'
-  ];
+  const [availableDates, setAvailableDates] = useState<any[]>([]);
 
-  const dates = [
-    { date: '2024-01-15', day: 'Пн', dayNumber: '15' },
-    { date: '2024-01-16', day: 'Вт', dayNumber: '16' },
-    { date: '2024-01-17', day: 'Ср', dayNumber: '17' },
-    { date: '2024-01-18', day: 'Чт', dayNumber: '18' },
-    { date: '2024-01-19', day: 'Пт', dayNumber: '19' },
-    { date: '2024-01-20', day: 'Сб', dayNumber: '20' },
-    { date: '2024-01-21', day: 'Вс', dayNumber: '21' }
-  ];
+  useEffect(() => {
+    if (route?.params?.serviceId) {
+      const service = getServiceById(route.params.serviceId);
+      setSelectedService(service);
+    }
+    
+    // Генерируем доступные даты на 7 дней вперед
+    const dates = [];
+    for (let i = 0; i < 7; i++) {
+      const date = addDays(new Date(), i);
+      dates.push({
+        date: getDateString(date),
+        day: getWeekdayName(date, currentLanguage).slice(0, 3),
+        dayNumber: date.getDate().toString()
+      });
+    }
+    setAvailableDates(dates);
+  }, [route?.params?.serviceId, currentLanguage]);
+
+  const handleCreateBooking = async () => {
+    if (!selectedService || !selectedDate || !selectedTime || !user) {
+      Alert.alert(t('common.error'), t('booking.fillAllFields'));
+      return;
+    }
+
+    try {
+      setLoading(true);
+      await BookingService.createBooking({
+        user_id: user.id,
+        service_id: selectedService.id,
+        booking_date: selectedDate,
+        booking_time: selectedTime,
+        notes: formData.comment,
+      });
+      
+      Alert.alert(t('common.success'), t('booking.bookingSuccess'));
+      refresh();
+      setShowBookings(true);
+    } catch (error) {
+      Alert.alert(t('common.error'), t('booking.bookingError'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCancelBooking = async (bookingId: string) => {
+    try {
+      await BookingService.cancelBooking(bookingId);
+      Alert.alert(t('common.success'), t('booking.cancelled'));
+      refresh();
+    } catch (error) {
+      Alert.alert(t('common.error'), t('booking.cancelError'));
+    }
+  };
+
+  if (showBookings) {
+    return (
+      <SafeAreaView className="flex-1 bg-gray-50">
+        <View className="px-6 pt-4 pb-2">
+          <View className="flex-row items-center justify-between mb-4">
+            <Text className="text-2xl font-bold text-gray-900">{t('booking.myBookings')}</Text>
+            <TouchableOpacity onPress={() => setShowBookings(false)}>
+              <Text className="text-purple-600 font-semibold">{t('booking.newBooking')}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+        
+        <FlatList
+          data={bookings}
+          renderItem={({ item }) => (
+            <BookingCard
+              booking={item}
+              onCancel={() => handleCancelBooking(item.id)}
+              showActions={true}
+            />
+          )}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 24 }}
+          showsVerticalScrollIndicator={false}
+        />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView className="flex-1 bg-white">
       <ScrollView className="flex-1">
         <View className="px-6 pt-4">
-          <Text className="text-2xl font-bold text-gray-900 mb-2">Запись на услугу</Text>
-          <Text className="text-gray-600 mb-6">Выберите дату и время</Text>
+          <Text className="text-2xl font-bold text-gray-900 mb-2">
+            {selectedService ? `${t('booking.title')} ${selectedService.name}` : t('booking.selectService')}
+          </Text>
+          <Text className="text-gray-600 mb-6">{t('booking.selectDateAndTime')}</Text>
 
-          <View className="mb-6">
-            <Text className="text-lg font-semibold text-gray-900 mb-4">Выберите дату</Text>
+          <View className="mb-8">
+            <Text className="text-lg font-semibold text-gray-900 mb-6">{t('booking.selectDate')}</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4">
-              <View className="flex-row space-x-3">
-                {dates.map((item) => (
+              <View className="flex-row gap-4">
+                {availableDates.map((item) => (
                   <TouchableOpacity
                     key={item.date}
                     onPress={() => setSelectedDate(item.date)}
-                    className={`w-16 h-20 rounded-xl items-center justify-center ${
-                      selectedDate === item.date ? 'bg-pink-500' : 'bg-gray-100'
+                    className={`w-20 h-24 rounded-2xl items-center justify-center shadow-sm ${
+                      selectedDate === item.date 
+                        ? 'bg-purple-600 shadow-lg' 
+                        : 'bg-white border border-gray-200'
                     }`}
+                    activeOpacity={0.8}
                   >
-                    <Text className={`text-sm font-medium ${
+                    <Text className={`text-sm font-medium mb-1 ${
                       selectedDate === item.date ? 'text-white' : 'text-gray-600'
                     }`}>
                       {item.day}
                     </Text>
-                    <Text className={`text-lg font-bold ${
+                    <Text className={`text-xl font-bold ${
                       selectedDate === item.date ? 'text-white' : 'text-gray-900'
                     }`}>
                       {item.dayNumber}
@@ -57,65 +156,48 @@ const BookingScreen = () => {
             </ScrollView>
           </View>
 
-          <View className="mb-6">
-            <Text className="text-lg font-semibold text-gray-900 mb-4">Выберите время</Text>
-            <View className="flex-row flex-wrap gap-3">
-              {timeSlots.map((time) => (
-                <TouchableOpacity
-                  key={time}
-                  onPress={() => setSelectedTime(time)}
-                  className={`px-4 py-3 rounded-xl ${
-                    selectedTime === time ? 'bg-pink-500' : 'bg-gray-100'
-                  }`}
-                >
-                  <Text className={`font-medium ${
-                    selectedTime === time ? 'text-white' : 'text-gray-700'
-                  }`}>
-                    {time}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
+          {selectedService && selectedDate && (
+            <TimeSlotPicker
+              serviceId={selectedService.id}
+              selectedDate={selectedDate}
+              selectedTime={selectedTime}
+              onSelectTime={setSelectedTime}
+            />
+          )}
 
           <View className="mb-6">
-            <Text className="text-lg font-semibold text-gray-900 mb-4">Контактная информация</Text>
-            <View className="space-y-4">
-              <View>
-                <Text className="text-gray-700 mb-2">Имя</Text>
-                <TextInput
-                  className="bg-gray-100 rounded-xl px-4 py-3 text-gray-900"
-                  placeholder="Введите ваше имя"
-                  placeholderTextColor="#9CA3AF"
-                />
-              </View>
-              <View>
-                <Text className="text-gray-700 mb-2">Телефон</Text>
-                <TextInput
-                  className="bg-gray-100 rounded-xl px-4 py-3 text-gray-900"
-                  placeholder="+7 (999) 123-45-67"
-                  placeholderTextColor="#9CA3AF"
-                  keyboardType="phone-pad"
-                />
-              </View>
-              <View>
-                <Text className="text-gray-700 mb-2">Комментарий (необязательно)</Text>
-                <TextInput
-                  className="bg-gray-100 rounded-xl px-4 py-3 text-gray-900 h-20"
-                  placeholder="Дополнительные пожелания"
-                  placeholderTextColor="#9CA3AF"
-                  multiline
-                  textAlignVertical="top"
-                />
-              </View>
-            </View>
+            <Text className="text-lg font-semibold text-gray-900 mb-6">{t('booking.additionalInfo')}</Text>
+            <BeautifulInput
+              label={t('booking.commentOptional')}
+              placeholder={t('booking.additionalWishes')}
+              value={formData.comment}
+              onChangeText={(value) => setFormData(prev => ({ ...prev, comment: value }))}
+              multiline
+              numberOfLines={4}
+              icon="chatbubble-outline"
+            />
           </View>
 
-          <TouchableOpacity className="bg-pink-500 rounded-2xl py-4 mb-6">
-            <Text className="text-white text-center text-lg font-semibold">
-              Подтвердить запись
-            </Text>
-          </TouchableOpacity>
+          <View className="gap-3">
+            <BeautifulButton
+              title={loading ? t('booking.creating') : t('booking.confirmBooking')}
+              onPress={handleCreateBooking}
+              variant="primary"
+              size="large"
+              icon="checkmark-circle-outline"
+              fullWidth
+              disabled={loading || !selectedService || !selectedDate || !selectedTime}
+            />
+            
+            <BeautifulButton
+              title={t('booking.myBookings')}
+              onPress={() => setShowBookings(true)}
+              variant="outline"
+              size="medium"
+              icon="calendar-outline"
+              fullWidth
+            />
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>

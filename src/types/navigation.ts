@@ -1,4 +1,7 @@
 export type RootStackParamList = {
+  Welcome: undefined;
+  Login: undefined;
+  Register: undefined;
   Main: undefined;
   ServiceDetails: { serviceId: string };
   Booking: { serviceId?: string };

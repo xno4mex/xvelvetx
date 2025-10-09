@@ -2,6 +2,7 @@ import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { MainTabParamList } from '../types/navigation';
+import { useLocale } from '../context/LocaleContext';
 import HomeScreen from '../screens/HomeScreen';
 import ServicesScreen from '../screens/ServicesScreen';
 import BookingScreen from '../screens/BookingScreen';
@@ -10,6 +11,23 @@ import ProfileScreen from '../screens/ProfileScreen';
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
 const TabNavigator = () => {
+  const { t } = useLocale();
+  
+  const getTabLabel = (routeName: string) => {
+    switch (routeName) {
+      case 'Home':
+        return t('navigation.home');
+      case 'Services':
+        return t('navigation.services');
+      case 'Booking':
+        return t('navigation.booking');
+      case 'Profile':
+        return t('navigation.profile');
+      default:
+        return routeName;
+    }
+  };
+  
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -30,7 +48,8 @@ const TabNavigator = () => {
 
           return <Ionicons name={iconName} size={size} color={color} />;
         },
-        tabBarActiveTintColor: '#EC4899',
+        tabBarLabel: getTabLabel(route.name),
+        tabBarActiveTintColor: '#8B5CF6',
         tabBarInactiveTintColor: '#9CA3AF',
         tabBarStyle: {
           backgroundColor: '#FFFFFF',
@@ -51,22 +70,18 @@ const TabNavigator = () => {
       <Tab.Screen 
         name="Home" 
         component={HomeScreen}
-        options={{ tabBarLabel: 'Главная' }}
       />
       <Tab.Screen 
         name="Services" 
         component={ServicesScreen}
-        options={{ tabBarLabel: 'Услуги' }}
       />
       <Tab.Screen 
         name="Booking" 
         component={BookingScreen}
-        options={{ tabBarLabel: 'Запись' }}
       />
       <Tab.Screen 
         name="Profile" 
         component={ProfileScreen}
-        options={{ tabBarLabel: 'Профиль' }}
       />
     </Tab.Navigator>
   );
